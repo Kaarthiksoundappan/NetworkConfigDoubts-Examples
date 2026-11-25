@@ -66,6 +66,15 @@ of the repository. Stop a server with Ctrl+C. On Windows PowerShell type `curl.e
 | [07](07-mtls/) | Mutual TLS | The server checks the client's certificate too |
 | [08](08-troubleshooting/) | Troubleshooting | Finding the broken layer |
 
+## Doubts from real work
+
+| Doubt | About |
+|---|---|
+| [Kubernetes ingress, Palo Alto and Infoblox](doubts/kubernetes-ingress-paloalto-infoblox.md) | Which traffic a route table sends to the firewall, and where DNS fits |
+| [AKS private endpoints and Infoblox](doubts/aks-private-endpoint-infoblox.md) | Why each private endpoint needs a DNS record, and why its traffic can skip the firewall |
+| [IBM MQ queue managers on AKS](doubts/ibm-mq-on-aks.md) | Many queue managers in many namespaces: load balancers, MQ's unusual SNI, idle timeouts |
+| [IBM MQ with Envoy](doubts/ibm-mq-with-envoy.md) | The same with Envoy Gateway instead of NGINX, and how to move |
+
 ## Tools
 
 | Tool | Purpose |

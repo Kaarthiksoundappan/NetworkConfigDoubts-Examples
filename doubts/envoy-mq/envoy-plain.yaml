@@ -1,0 +1,55 @@
+# The same idea in plain Envoy, without Kubernetes objects. Good for learning how Envoy thinks.
+# Envoy Gateway generates configuration of this kind for you.
+#
+# Check the syntax (does not start Envoy):
+#   docker run --rm -v "${PWD}/doubts/envoy-mq:/cfg:ro" envoyproxy/envoy:v1.36.0 --mode validate -c /cfg/envoy-plain.yaml
+static_resources:
+  listeners:                                   # LISTENER: where connections come in
+    - name: mq_tls
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 8443 }
+      listener_filters:
+        - name: envoy.filters.listener.tls_inspector      # reads the SNI, does not decrypt
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.listener.tls_inspector.v3.TlsInspector
+      filter_chains:                           # FILTER CHAIN: which rule matches?
+        - filter_chain_match:
+            server_names: ["pay2e-qm1.chl.mq.ibm.com"]
+          filters:
+            - name: envoy.filters.network.tcp_proxy       # pass the bytes on unchanged
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
+                stat_prefix: qm1
+                cluster: qm1
+                idle_timeout: 3600s
+        - filter_chain_match:
+            server_names: ["pay2e-qm2.chl.mq.ibm.com"]
+          filters:
+            - name: envoy.filters.network.tcp_proxy
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
+                stat_prefix: qm2
+                cluster: qm2
+                idle_timeout: 3600s
+        # No rule without server_names: an unknown SNI matches nothing and is disconnected.
+  clusters:                                    # CLUSTER: where connections go out
+    - name: qm1
+      type: STRICT_DNS
+      connect_timeout: 5s
+      load_assignment:
+        cluster_name: qm1
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address: { address: qm1.payments.svc.cluster.local, port_value: 1414 }
+    - name: qm2
+      type: STRICT_DNS
+      connect_timeout: 5s
+      load_assignment:
+        cluster_name: qm2
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address: { address: qm2.payments.svc.cluster.local, port_value: 1414 }

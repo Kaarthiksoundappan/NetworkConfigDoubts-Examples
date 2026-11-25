@@ -1,0 +1,102 @@
+# IBM MQ on AKS with Envoy Gateway: the "payments" namespace.
+# Repeat the namespaced parts for "orders". Names are examples.
+
+# Cluster-wide, once: "Gateways of class eg are run by Envoy Gateway".
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: eg
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+---
+# How the Envoy of this Gateway is deployed.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: payments-proxy
+  namespace: payments
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyDeployment:
+        replicas: 2                 # two Envoys, so one can fail
+      envoyService:
+        annotations:
+          # Private load balancer IP (reached through Palo Alto), not a public one.
+          service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+---
+# The entry point. Envoy Gateway creates Envoy pods and a LoadBalancer Service for it.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: payments-mq
+  namespace: payments
+spec:
+  gatewayClassName: eg
+  infrastructure:
+    parametersRef:
+      group: gateway.envoyproxy.io
+      kind: EnvoyProxy
+      name: payments-proxy
+  listeners:
+    - name: mq-tls
+      protocol: TLS
+      port: 443
+      tls:
+        mode: Passthrough           # do not decrypt, only read the SNI
+      allowedRoutes:
+        namespaces:
+          from: Same                # only routes in "payments" may attach
+---
+# One TLSRoute per queue manager.
+apiVersion: gateway.networking.k8s.io/v1
+kind: TLSRoute
+metadata:
+  name: qm1
+  namespace: payments
+spec:
+  parentRefs:
+    - name: payments-mq
+      sectionName: mq-tls
+  hostnames:
+    - pay2e-qm1.chl.mq.ibm.com      # SNI of channel PAY.QM1. One line per channel of QM1.
+  rules:
+    - backendRefs:
+        - name: qm1                 # the Kubernetes Service of QM1
+          port: 1414
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: TLSRoute
+metadata:
+  name: qm2
+  namespace: payments
+spec:
+  parentRefs:
+    - name: payments-mq
+      sectionName: mq-tls
+  hostnames:
+    - pay2e-qm2.chl.mq.ibm.com
+  rules:
+    - backendRefs:
+        - name: qm2
+          port: 1414
+---
+# Keep quiet MQ connections alive between the client and Envoy.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: ClientTrafficPolicy
+metadata:
+  name: payments-mq
+  namespace: payments
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: payments-mq
+  tcpKeepalive:
+    idleTime: 2m                    # shorter than the Azure load balancer's 4 minutes
+    interval: 30s
+    probes: 3
+  timeout:
+    tcp:
+      idleTimeout: 1h               # the default, written down so that it is visible
