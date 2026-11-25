@@ -1,0 +1,6 @@
+# Generated certificates and PRIVATE KEYS. Never commit private keys.
+certs/
+
+__pycache__/
+*.pyc
+.vscode/
